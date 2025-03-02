@@ -7,6 +7,7 @@
 #define FX_R 15
 
 bool vol_R_states[2][2];
+bool button_states[7];
 
 void init_pico ()
 {
@@ -21,14 +22,20 @@ int main()
 
     while (1)
     {
-        if (gpio_get(FX_R)){
-            printf("button pressed >:D\n");
-        }
-        else {
-            printf("...\n");
-        }
+        bool button_new_states[7] = {
+            0, // Start
+            0, // BT-A
+            0, // BT-B
+            0, // BT-C
+            0, // BT-D
+            0, // FX-L
+            gpio_get(FX_R)
+        };
 
-        sleep_ms(100);
+        if (button_new_states[6] != button_states[6])
+            printf("Button state: %d\n", button_new_states[6]);
+
+        button_states[6] = button_new_states[6];
     }
 }
 void init_button (int pin)
