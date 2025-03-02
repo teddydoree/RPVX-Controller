@@ -31,11 +31,19 @@ int main()
             0, // FX-L
             gpio_get(FX_R)
         };
+        bool changed = false;
+        for (int i = 0; i < 7; ++i) {
+            if (button_states[i] != button_new_states[i]) {
+                button_states[i] = button_new_states[i];
+                changed = true;
+            }
+        }
 
-        if (button_new_states[6] != button_states[6])
-            printf("Button state: %d\n", button_new_states[6]);
 
-        button_states[6] = button_new_states[6];
+        if (changed)
+            printf("Button states: %d %d %d %d %d %d %d\n", button_states[0], button_states[1], button_states[2],
+                    button_states[3], button_states[4], button_states[5], button_states[6]);
+
     }
 }
 void init_button (int pin)
