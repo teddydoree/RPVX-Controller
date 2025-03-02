@@ -1,13 +1,49 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
+#include "RPVX.h"
 
+#define VOL_R_A 0
+#define VOL_R_B 1
+#define FX_R 15
+
+bool vol_R_states[2][2];
+
+void init_pico ()
+{
+    init_button(FX_R);
+    init_encoder(VOL_R_A, VOL_R_B);
+}
 
 int main()
 {
     stdio_init_all();
+    init_pico();
 
-    while (true) {
-        printf("Hello, world!\n");
-        sleep_ms(1000);
+    while (1)
+    {
+        if (gpio_get(FX_R)){
+            printf("button pressed >:D\n");
+        }
+        else {
+            printf("...\n");
+        }
+
+        sleep_ms(100);
     }
+}
+void init_button (int pin)
+{
+    gpio_set_function (pin, GPIO_FUNC_SIO);
+    gpio_pull_down (pin);
+    gpio_set_dir (pin, GPIO_IN);
+}
+
+void init_encoder (int a, int b)
+{
+    gpio_set_function (a, GPIO_FUNC_SIO);
+    gpio_set_function (b, GPIO_FUNC_SIO);
+    gpio_disable_pulls (a);
+    gpio_disable_pulls (b);
+    gpio_set_dir (a, GPIO_IN);
+    gpio_set_dir (b, GPIO_IN);
 }
