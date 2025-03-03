@@ -2,9 +2,17 @@
 #include "pico/stdlib.h"
 #include "RPVX.h"
 
+#define START 22
+#define BT_A 13
+#define BT_B 12
+#define BT_C 11
+#define BT_D 10
+#define FX_L 14
+#define FX_R 15
+#define VOL_L_A 16
+#define VOL_L_B 17
 #define VOL_R_A 0
 #define VOL_R_B 1
-#define FX_R 15
 
 // [VOL-L, VOL-R] [pin A, pin B]
 bool vol[2][2];
@@ -29,16 +37,16 @@ int main()
     while (1)
     {
         bool button_new_states[7] = {
-            0, // Start
-            0, // BT-A
-            0, // BT-B
-            0, // BT-C
-            0, // BT-D
-            0, // FX-L
+            gpio_get(START),
+            gpio_get(BT_A),
+            gpio_get(BT_B),
+            gpio_get(BT_C),
+            gpio_get(BT_D),
+            gpio_get(FX_L),
             gpio_get(FX_R)
         };
         bool vol_new[2][2] = {
-            {0,0},  // VOL_L
+            {gpio_get(VOL_L_A), gpio_get(VOL_L_B)},
             {gpio_get(VOL_R_A), gpio_get(VOL_R_B)}
         };
 
