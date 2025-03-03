@@ -33,6 +33,8 @@ bool vol[2][2];
 // [VOL-L, VOL-R] [previous direction, current direction]
 bool vol_directions[2][2] = { {0,0}, {0,0} };
 
+int8_t delta[2] = {0, 0};
+
 // [START, BT-A, BT-B, BT-C, BT-D, FX_L, FX_R]
 bool button_states[7];
 uint8_t button_maps[7] = {
@@ -44,9 +46,6 @@ uint8_t button_maps[7] = {
     FX_L_KEY,
     FX_R_KEY
 };
-
-// [VOL-L, VOL-R]
-double vol_states[2];
 
 void init_pico ()
 {
@@ -90,7 +89,7 @@ int main()
             if ((vol[i][0]!=vol_new[i][0]) && (vol[i][1]!=vol_new[i][1])) {
                 //printf("Invalid state change.\n\n");
             }
-            // do nothing if no change
+            // no change
             else if ((vol[i][0]==vol_new[i][0]) && (vol[i][1]==vol_new[i][1])) {}
             // valid change, grab direction
             else {
@@ -98,15 +97,19 @@ int main()
                 if (vol_directions[i][0] == vol_directions[i][1]){
                     if(vol_directions[i][1]) {
                         //printf("R / CW\t\t-->\n\n");
+                        delta[i] = 10;
                     }
                     else {
                         //printf("L / CCW\t<--\n\n");
+                        delta[i] = -10;
                     }
                 }
                 else {}
                 vol_directions[i][0] = vol_directions[i][1];
             }
         }
+        if (delta[0] != 0 || delta[1] != 0)
+            send_mouse_report(); 
 
         // save new VOL values to stored values
         for (int a = 0; a < 2; ++a) {
@@ -118,17 +121,17 @@ int main()
             }
         }
 
-        bool changed = false;
+        bool btn_changed = false;
         // check button states for changes
         for (int i = 0; i < 7; ++i) {
             if (button_states[i] != button_new_states[i]) {
                 button_states[i] = button_new_states[i];
-                changed = true;
+                btn_changed = true;
             }
         }
         
         // print button states if any changes
-        if (changed) {
+        if (btn_changed) {
             //printf("Button states: %d %d %d %d %d %d %d\n", button_states[0], button_states[1], button_states[2],
             //        button_states[3], button_states[4], button_states[5], button_states[6]);
             //printf("VOL-L: %d %d\nVOL-R: %d %d\n\n",
@@ -191,10 +194,9 @@ void send_mouse_report()
     // skips report if HID not ready
     if ( !tud_hid_ready() ) return;
 
-    int8_t const delta = 5;
-
-    // no button, right + down, no scroll, no pan
-    tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta, delta, 0, 0);
+    tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta[0], delta[1], 0, 0);
+    delta[0] = 0;
+    delta[1] = 0;
 }
 
 
