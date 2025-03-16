@@ -124,20 +124,20 @@ int main()
         bool btn_changed = false;
         // check button states for changes
         for (int i = 0; i < 7; ++i) {
-            if (button_states[i] != button_new_states[i]) {
+            //if (button_states[i] != button_new_states[i]) {
                 button_states[i] = button_new_states[i];
                 btn_changed = true;
-            }
+            //}
         }
         
         // print button states if any changes
-        if (btn_changed) {
+        //if (btn_changed) {
             //printf("Button states: %d %d %d %d %d %d %d\n", button_states[0], button_states[1], button_states[2],
             //        button_states[3], button_states[4], button_states[5], button_states[6]);
             //printf("VOL-L: %d %d\nVOL-R: %d %d\n\n",
             //        vol[0][0], vol[0][1], vol[1][0], vol[1][1]);
             send_kb_report();
-        }
+        //}
         
     }
 }
