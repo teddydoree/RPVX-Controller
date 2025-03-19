@@ -35,6 +35,8 @@ bool vol_directions[2][2] = { {0,0}, {0,0} };
 
 int8_t delta[2] = {0, 0};
 
+int64_t prev_time[2] = {0, 0};
+
 // [START, BT-A, BT-B, BT-C, BT-D, FX_L, FX_R]
 bool button_states[7];
 uint8_t button_maps[7] = {
@@ -94,17 +96,30 @@ int main()
             // valid change, grab direction
             else {
                 vol_directions[i][1] = encoder_direction(vol_new[i][0],vol_new[i][1], vol[i][0],vol[i][1]);
-                if (vol_directions[i][0] == vol_directions[i][1]){
+                //if (vol_directions[i][0] == vol_directions[i][1]){
                     if(vol_directions[i][1]) {
+                        
                         //printf("R / CW\t\t-->\n\n");
-                        delta[i] = 10;
+                        //delta[i] = 10;d
+                        //busy_wait_us(200);
+
+                        if (time_us_64() > (prev_time[i] + 200)) {
+                            delta[i] = 10;
+                            prev_time[i] = time_us_64();
+                        }
+                        else {}
                     }
                     else {
                         //printf("L / CCW\t<--\n\n");
-                        delta[i] = -10;
+                        //delta[i] = -10;
+                        //busy_wait_us(200);
+                        if (time_us_64() > (prev_time[i] + 200)) {
+                            delta[i] = -10;
+                            prev_time[i] = time_us_64();
+                        }
+                        else{}
                     }
-                }
-                else {}
+                //}
                 vol_directions[i][0] = vol_directions[i][1];
             }
         }
