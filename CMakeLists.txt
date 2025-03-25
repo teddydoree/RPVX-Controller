@@ -51,7 +51,9 @@ target_link_libraries(RPVX
         tinyusb_board
         hardware_pio
         hardware_dma
-        hardware_irq)
+        hardware_irq
+        hardware_pwm
+        hardware_sync)
 
 # Add the standard include files to the build
 target_include_directories(RPVX PRIVATE
