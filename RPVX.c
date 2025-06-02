@@ -61,6 +61,13 @@ uint8_t button_maps[7] = {
     FX_R_KEY
 };
 
+struct controller_report {
+    uint16_t button_bitmap;
+    uint8_t joystick_z;
+    uint8_t joystick_rotation_x;
+    uint8_t joystick_rotation_y;
+    uint8_t joystick_rotation_z;
+};
 
 void init_pico ()
 {
@@ -89,7 +96,9 @@ int main()
        .role = TUSB_ROLE_DEVICE,
        .speed = TUSB_SPEED_AUTO
     };
-    tusb_init(BOARD_TUD_RHPORT, &dev_init);
+    tusb_init(); // BOARD_TUD_RHPORT, &dev_init
+
+    struct controller_report creport = { 0, 0, 0, 0, 0 };
 
     while (1)
     {
@@ -131,7 +140,15 @@ int main()
                         if(vol_directions[i][1]) {
                             
                             //printf("R / CW\t\t-->\n\n");
-                            delta[i] = MOUSE_DELTA;
+                            // delta[i] = MOUSE_DELTA;
+                            if (i == 1) {
+                                int overflow = (int) (creport.joystick_rotation_x) + MOUSE_DELTA;
+                                creport.joystick_rotation_x = (uint8_t) (overflow % 0xFF);
+                            }
+                            else {
+                                int overflow = (int) (creport.joystick_rotation_z) + MOUSE_DELTA;
+                                creport.joystick_rotation_z = (uint8_t) (overflow % 0xFF);
+                            }
 
                             /*
                             if (time_us_64() > (prev_time_enc[i] + debounce_delay_us)) {
@@ -143,7 +160,21 @@ int main()
                         }
                         else {
                             //printf("L / CCW\t<--\n\n");
-                            delta[i] = -MOUSE_DELTA;
+                            // delta[i] = -MOUSE_DELTA;
+                            if (i == 1) {
+                                int overflow = (int) (creport.joystick_rotation_x) - MOUSE_DELTA;
+                                if (overflow < 0) {
+                                    overflow += 0xFF;
+                                }
+                                creport.joystick_rotation_x = (uint8_t) overflow;
+                            }
+                            else {
+                                int overflow = (int) (creport.joystick_rotation_z) - MOUSE_DELTA;
+                                if (overflow < 0) {
+                                    overflow += 0xFF;
+                                }
+                                creport.joystick_rotation_z = (uint8_t) overflow;
+                            }
 
                             /*
                             if (time_us_64() > (prev_time_enc[i] + DEBOUNCE_DELAY_ENC_US)) {
@@ -162,8 +193,8 @@ int main()
             }
         }
         // send mouse report if any changes
-        if (delta[0] != 0 || delta[1] != 0)
-            send_mouse_report(); 
+        // if (delta[0] != 0 || delta[1] != 0)
+            // send_mouse_report(); 
 
         // save new VOL values to stored values
         for (int a = 0; a < 2; ++a) {
@@ -178,11 +209,18 @@ int main()
         //bool btn_changed = false;
         
         // check button states for changes
+        creport.button_bitmap = 0;
         for (int i = 0; i < 7; ++i) {
+            if (button_new_states[i]) {
+                creport.button_bitmap += (1 << i);
+            }
+            /*
             if ( (button_states[i] != button_new_states[i]) ) {
                 button_states[i] = button_new_states[i];
+                creport.button_bitmap = c
                 //btn_changed = true;
             }
+            */
         }
         
         /*
@@ -204,12 +242,14 @@ int main()
             //        button_states[3], button_states[4], button_states[5], button_states[6]);
             //printf("VOL-L: %d %d\nVOL-R: %d %d\n\n",
             //        vol[0][0], vol[0][1], vol[1][0], vol[1][1]);
-            send_kb_report(); // ***** always send kb report, let windows handle debounce :D ************
+            // send_kb_report(); // ***** always send kb report, let windows handle debounce :D ************
         //}
+        if (tud_hid_ready()) {
+            tud_hid_n_report(0x00, 0x01, &creport, sizeof(creport));
+        }
         
     }
 } //-----------------end of main--------------------------------
-
 
 void init_button (int pin)
 {
@@ -265,7 +305,7 @@ void send_kb_report()
         }
     }
 
-    tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
+    // tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
     //buttons_sent = true;
 }
 
@@ -275,7 +315,7 @@ void send_mouse_report()
     // skips report if HID not ready
     if ( !tud_hid_ready() ) return;
 
-    tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta[0], delta[1], 0, 0);
+    //  tud_hid_mouse_report(REPORT_ID_MOUSE, 0x00, delta[0], delta[1], 0, 0);
     delta[0] = 0;
     delta[1] = 0;
 }
