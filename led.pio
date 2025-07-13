@@ -1,0 +1,42 @@
+
+.pio_version 0
+
+.program led
+
+.lang_opt python out_init = pico.PIO.OUT_LOW
+.lang_opt python set_init = pico.PIO.OUT_LOW
+
+
+.wrap_target
+    out x, 1
+    set pins, 1 
+    nop
+    mov pins, x
+    nop
+    set pins, 0
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void led_program_init(PIO pio, uint state_machine, uint initial_pc, uint pin) {
+
+    pio_gpio_init(pio, pin);
+    pio_sm_set_consecutive_pindirs(pio, state_machine, pin, 1, true);
+    
+    pio_sm_config config = led_program_get_default_config(initial_pc);
+    sm_config_set_set_pins(&config, pin, 1);
+    sm_config_set_out_pins(&config, pin, 1);
+    sm_config_set_out_shift(&config, true, true, 24); // config, shift_right, autopull, threshold
+
+    float div = clock_get_hz(clk_sys) / 5000000.0f;
+    sm_config_set_clkdiv(&config, div); // 125Mz -> 5Mz
+
+    pio_sm_set_out_pins(pio, state_machine, pin, 1);
+    
+
+    pio_sm_init(pio, state_machine, initial_pc, &config);
+    pio_sm_set_enabled(pio, state_machine, true);
+}
+
+%}

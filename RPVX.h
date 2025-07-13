@@ -6,6 +6,6 @@ void init_pwm(int pin);
 
 bool encoder_direction (bool a, bool b, bool newA, bool newB);
 
-void send_kb_report();
+bool send_kb_report();
 
 void send_mouse_report();

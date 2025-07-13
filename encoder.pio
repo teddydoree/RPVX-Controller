@@ -1,0 +1,51 @@
+
+.pio_version 0
+
+.program encoder
+
+.lang_opt python out_init = pico.PIO.OUT_LOW
+.lang_opt python set_init = pico.PIO.OUT_LOW
+
+
+.wrap_target
+    in pins, 2
+    mov x, isr
+de_dupe:
+    set y, 0
+    mov isr, y
+    in pins, 2
+    mov y, isr
+    jmp x!=y send
+    jmp de_dupe
+send:   
+    mov isr, y
+    mov x, y
+    push
+    jmp de_dupe
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void encoder_program_init(PIO pio, uint state_machine, uint initial_pc, uint pin) {
+
+    pio_gpio_init(pio, pin);
+    pio_sm_set_consecutive_pindirs(pio, state_machine, pin, 2, false);
+    
+    pio_sm_config config = encoder_program_get_default_config(initial_pc);
+    // sm_config_set_set_pins(&config, pin, 1);
+    sm_config_set_in_pins(&config, pin);
+    sm_config_set_in_pin_count(&config, 2);
+    // sm_config_set_out_shift(&config, true, true, 24); // config, shift_right, autopull, threshold
+    sm_config_set_in_shift(&config, false, false, 2);
+
+    // float div = clock_get_hz(clk_sys) / 5000000.0f;
+    // sm_config_set_clkdiv(&config, div); // 125Mz -> 5Mz
+
+    pio_sm_set_in_pins(pio, state_machine, pin);
+
+    pio_sm_init(pio, state_machine, initial_pc, &config);
+    pio_sm_set_enabled(pio, state_machine, true);
+}
+
+%}

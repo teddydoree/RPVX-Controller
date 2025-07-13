@@ -7,6 +7,10 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 
+#include "hardware/pio.h"
+#include "encoder.pio.h"
+#include "led.pio.h"
+
 #define START 22
 #define BT_A 13
 #define BT_B 12
@@ -18,11 +22,7 @@
 #define VOL_L_B 17
 #define VOL_R_A 0
 #define VOL_R_B 1
-
-//#define RED_RGB 18
-//#define GREEN_RGB 19
-//#define BLUE_RGB 20
-//#define CYCLE_TIME_MS 5000
+#define LED_GPIO 69
 
 #define START_KEY HID_KEY_1
 #define BT_A_KEY HID_KEY_D
@@ -32,9 +32,11 @@
 #define FX_L_KEY HID_KEY_C
 #define FX_R_KEY HID_KEY_M
 
-#define DEBOUNCE_DELAY_ENC_US 5000
+#define DEBOUNCE_DELAY_ENC_US 500
 //#define DEBOUNCE_DELAY_BTN_US 5000
 #define MOUSE_DELTA 10
+#define ENCODER_CONSENSUS_COUNT 2
+#define KEYBOARD_RESEND_TIMEOUT_MS 100
 
 //bool buttons_sent = true;
 
@@ -43,6 +45,8 @@ bool vol[2][2];
 
 // [VOL-L, VOL-R] [previous direction, current direction]
 bool vol_directions[2][2] = { {0,0}, {0,0} };
+
+uint64_t consensus[2][2] = { { 0, 0 }, { 0, 0 } };
 
 // [VOL-L, VOL-R]
 int8_t delta[2] = {0, 0}; // mouse delta
@@ -61,6 +65,17 @@ uint8_t button_maps[7] = {
     FX_R_KEY
 };
 
+PIO led_pio;
+uint led_state_machine;
+uint led_inital_pc;
+
+PIO lknob_pio;
+uint lknob_state_machine;
+uint lknob_initial_pc;
+
+PIO rknob_pio;
+uint rknob_state_machine;
+uint rknob_initial_pc;
 
 void init_pico ()
 {
@@ -85,11 +100,35 @@ int main()
 
     // TinyUSB initialization
     // init device stack on configured roothub port
+    
     tusb_rhport_init_t dev_init = {
        .role = TUSB_ROLE_DEVICE,
        .speed = TUSB_SPEED_AUTO
     };
-    tusb_init(BOARD_TUD_RHPORT, &dev_init);
+    
+    tusb_rhport_init(BOARD_TUD_RHPORT, &dev_init); // 
+
+    /*
+    if (!pio_claim_free_sm_and_add_program_for_gpio_range(&led_program, &led_pio, &led_state_machine, &led_initial_pc, LED_GPIO, 1, true)) {
+        panic("Failed to claim led state machine!");
+    }
+
+    led_program_init(led_pio, led_state_machine, led_inital_pc, LED_GPIO)
+    */
+
+    if (!pio_claim_free_sm_and_add_program_for_gpio_range(&encoder_program, &lknob_pio, &lknob_state_machine, &lknob_initial_pc, VOL_L_A, 1, true)) {
+        panic("Failed to claim led state machine!");
+    }
+
+    if (!pio_claim_free_sm_and_add_program_for_gpio_range(&encoder_program, &rknob_pio, &rknob_state_machine, &rknob_initial_pc, VOL_R_A, 1, true)) {
+        panic("Failed to claim led state machine!");
+    }
+
+    encoder_program_init(lknob_pio, lknob_state_machine, lknob_initial_pc, VOL_L_A);
+    encoder_program_init(rknob_pio, rknob_state_machine, rknob_initial_pc, VOL_R_A);    
+
+    bool keyboard_needs_update = false;
+    uint64_t last_keyboard_update = 0;
 
     while (1)
     {
@@ -103,11 +142,34 @@ int main()
             gpio_get(FX_L),
             gpio_get(FX_R)
         };
+        bool any_button_held = false;
+        for (int i = 0; i < 8; ++i) {
+            if (button_new_states[i]) {
+                any_button_held = true;
+                break;
+            }
+        }
         // temporarily store current VOL values (encoder states)
         bool vol_new[2][2] = {
-            {gpio_get(VOL_L_A), gpio_get(VOL_L_B)},
-            {gpio_get(VOL_R_A), gpio_get(VOL_R_B)}
+            {vol[0][0], vol[0][1]},
+            {vol[1][0], vol[1][1]}
         };
+
+        if (!pio_sm_is_rx_fifo_empty(lknob_pio, lknob_state_machine)) {
+            uint8_t fresh = (uint8_t) pio_sm_get(lknob_pio, lknob_state_machine);
+            vol_new[0][0] = (fresh & 1) > 0;
+            vol_new[0][1] = (fresh & 2) > 0;
+            // delta[0] = 10;
+            // debug_print_digit(fresh);
+        }
+
+        if (!pio_sm_is_rx_fifo_empty(rknob_pio, rknob_state_machine)) {
+            uint8_t fresh = (uint8_t) pio_sm_get(rknob_pio, rknob_state_machine);
+            vol_new[1][0] = (fresh & 1) > 0;
+            vol_new[1][1] = (fresh & 2) > 0;
+            // delta[1] = 10;
+            // debug_print_digit(fresh);
+        }
 
         // stores direction if encoder states are valid and different
         for (int i = 0; i < 2; ++i) {
@@ -115,6 +177,7 @@ int main()
             // invalid if 00 -> 11 or 11 -> 00
             if ((vol[i][0]!=vol_new[i][0]) && (vol[i][1]!=vol_new[i][1])) {
                 //printf("Invalid state change.\n\n");
+                prev_time_enc[i] = time_us_64();
             }
 
             // no change, do nothing
@@ -127,38 +190,44 @@ int main()
                 if (time_us_64() > (prev_time_enc[i] + DEBOUNCE_DELAY_ENC_US)) {
                     vol_directions[i][1] = encoder_direction(vol_new[i][0],vol_new[i][1], vol[i][0],vol[i][1]);
 
-                    //if (vol_directions[i][0] == vol_directions[i][1]) { //----buffer for inputs----------- 
-                        if(vol_directions[i][1]) {
-                            
-                            //printf("R / CW\t\t-->\n\n");
+                    if(vol_directions[i][1]) {
+                        //printf("R / CW\t\t-->\n\n");
+                        consensus[i][0] += (consensus[i][0] > ENCODER_CONSENSUS_COUNT) ? 0 : 1;
+                        consensus[i][1] = (consensus[i][1] > 0) ? consensus[i][1] - 1 : 0;
+
+                        /*
+                        if (time_us_64() > (prev_time_enc[i] + debounce_delay_us)) {
                             delta[i] = MOUSE_DELTA;
-
-                            /*
-                            if (time_us_64() > (prev_time_enc[i] + debounce_delay_us)) {
-                                delta[i] = MOUSE_DELTA;
-                                prev_time_enc[i] = time_us_64();
-                            }
-                            else {}
-                            */
+                            prev_time_enc[i] = time_us_64();
                         }
-                        else {
-                            //printf("L / CCW\t<--\n\n");
+                        else {}
+                        */
+                    }
+                    else {
+                        //printf("L / CCW\t<--\n\n");
+                        consensus[i][0] = (consensus[i][0] > 0) ? consensus[i][0] - 1 : 0;
+                        consensus[i][1] += (consensus[i][1] > ENCODER_CONSENSUS_COUNT) ? 0 : 1;
+                        
+
+                        /*
+                        if (time_us_64() > (prev_time_enc[i] + DEBOUNCE_DELAY_ENC_US)) {
                             delta[i] = -MOUSE_DELTA;
-
-                            /*
-                            if (time_us_64() > (prev_time_enc[i] + DEBOUNCE_DELAY_ENC_US)) {
-                                delta[i] = -MOUSE_DELTA;
-                                prev_time_enc[i] = time_us_64();
-                            }
-                            else{}
-                            */
+                            prev_time_enc[i] = time_us_64();
                         }
-                    //}
+                        else{}
+                        */
+                    }
+                    if (consensus[i][0] > ENCODER_CONSENSUS_COUNT) {
+                        delta[i] = MOUSE_DELTA;
+                    }
+                    else if (consensus[i][1] > ENCODER_CONSENSUS_COUNT) {
+                        delta[i] = -MOUSE_DELTA;
+                    }
                     vol_directions[i][0] = vol_directions[i][1];
-                    prev_time_enc[i] = time_us_64();
                 }
                 // ignores all signals in debounce window (in theory)
                 else {}
+                prev_time_enc[i] = time_us_64();
             }
         }
         // send mouse report if any changes
@@ -181,6 +250,7 @@ int main()
         for (int i = 0; i < 7; ++i) {
             if ( (button_states[i] != button_new_states[i]) ) {
                 button_states[i] = button_new_states[i];
+                keyboard_needs_update = true;
                 //btn_changed = true;
             }
         }
@@ -204,8 +274,16 @@ int main()
             //        button_states[3], button_states[4], button_states[5], button_states[6]);
             //printf("VOL-L: %d %d\nVOL-R: %d %d\n\n",
             //        vol[0][0], vol[0][1], vol[1][0], vol[1][1]);
-            send_kb_report(); // ***** always send kb report, let windows handle debounce :D ************
+            // send_kb_report(); // ***** always send kb report, let windows handle debounce :D ************
         //}
+
+        if (keyboard_needs_update || (any_button_held && time_us_64() > last_keyboard_update + KEYBOARD_RESEND_TIMEOUT_MS)) {
+            bool kb_updated = send_kb_report();
+            keyboard_needs_update = !kb_updated;
+            if (kb_updated) {
+                last_keyboard_update = time_us_64();
+            }
+        }
         
     }
 } //-----------------end of main--------------------------------
@@ -247,12 +325,12 @@ bool encoder_direction (bool a, bool b, bool oldA, bool oldB)
 }
 
 // sends kb HID report via TinyUSB
-void send_kb_report()
+bool send_kb_report()
 {
     // skips report if HID not ready
     if ( !tud_hid_ready() ) {
         //buttons_sent = false;
-        return;
+        return false;
     }
     uint8_t keycode[6] = { 0 };
     int k = 0;
@@ -267,6 +345,7 @@ void send_kb_report()
 
     tud_hid_keyboard_report(REPORT_ID_KEYBOARD, 0, keycode);
     //buttons_sent = true;
+    return true;
 }
 
 // sends mouse HID report via TinyUSB
