@@ -12,16 +12,32 @@
     mov x, isr
 de_dupe:
     set y, 0
-    mov isr, y
+    mov isr, y               ; clear the isr
     in pins, 2
-    mov y, isr
-    jmp x!=y send
-    jmp de_dupe
-send:   
+    mov y, isr               ; read pins
+    jmp x!=y decode_change   ; process the change
+    jmp de_dupe              ; read again until a change is found
+decode_change:
+    mov y, osr               ; store count in y
+    mov osr, x               ; store old pin values in osr
+    out x, 1                 ; retrieve the LSB of the old pins (base pin)
+    jmp pin high_bit_high
+    jmp x-- dec
+    jmp inc
+high_bit_high:
+    jmp x-- inc
+    jmp dec
+dec:
+    jmp y-- send
+inc:
+    mov y, !y
+    jmp y-- inc_inner
+inc_inner:
+    mov y, !y
+send:
     mov isr, y
-    mov x, y
-    push
-    jmp de_dupe
+    push noblock
+    mov osr, y
 .wrap
 
 % c-sdk {
@@ -38,6 +54,7 @@ static inline void encoder_program_init(PIO pio, uint state_machine, uint initia
     sm_config_set_in_pin_count(&config, 2);
     // sm_config_set_out_shift(&config, true, true, 24); // config, shift_right, autopull, threshold
     sm_config_set_in_shift(&config, false, false, 2);
+    sm_config_set_jmp_pin(&config, pin + 1);
 
     // float div = clock_get_hz(clk_sys) / 5000000.0f;
     // sm_config_set_clkdiv(&config, div); // 125Mz -> 5Mz

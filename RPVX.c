@@ -40,17 +40,11 @@
 
 //bool buttons_sent = true;
 
-// [VOL-L, VOL-R] [pin A, pin B]
-bool vol[2][2];
-
-// [VOL-L, VOL-R] [previous direction, current direction]
-bool vol_directions[2][2] = { {0,0}, {0,0} };
-
-uint64_t consensus[2][2] = { { 0, 0 }, { 0, 0 } };
+// [VOL-L, VOL-R] signed step counts
+int32_t knob_states[2] = { 0, 0 };
 
 // [VOL-L, VOL-R]
 int8_t delta[2] = {0, 0}; // mouse delta
-int64_t prev_time_enc[2] = {0, 0}; // time of previous encoder change
 //int64_t prev_time_btn[7] = {0, 0, 0, 0, 0, 0, 0};
 
 // [START, BT-A, BT-B, BT-C, BT-D, FX_L, FX_R]
@@ -149,100 +143,22 @@ int main()
                 break;
             }
         }
-        // temporarily store current VOL values (encoder states)
-        bool vol_new[2][2] = {
-            {vol[0][0], vol[0][1]},
-            {vol[1][0], vol[1][1]}
-        };
 
         if (!pio_sm_is_rx_fifo_empty(lknob_pio, lknob_state_machine)) {
-            uint8_t fresh = (uint8_t) pio_sm_get(lknob_pio, lknob_state_machine);
-            vol_new[0][0] = (fresh & 1) > 0;
-            vol_new[0][1] = (fresh & 2) > 0;
-            // delta[0] = 10;
-            // debug_print_digit(fresh);
+            int32_t fresh = (int32_t) pio_sm_get(lknob_pio, lknob_state_machine);
+            delta[0] = MOUSE_DELTA * (int8_t) (fresh - knob_states[0]);
+            knob_states[0] = fresh;
         }
 
         if (!pio_sm_is_rx_fifo_empty(rknob_pio, rknob_state_machine)) {
-            uint8_t fresh = (uint8_t) pio_sm_get(rknob_pio, rknob_state_machine);
-            vol_new[1][0] = (fresh & 1) > 0;
-            vol_new[1][1] = (fresh & 2) > 0;
-            // delta[1] = 10;
-            // debug_print_digit(fresh);
+            int32_t fresh = (int32_t) pio_sm_get(rknob_pio, rknob_state_machine);
+            delta[1] = MOUSE_DELTA * (int8_t) (fresh - knob_states[1]);
+            knob_states[1] = fresh;
         }
 
-        // stores direction if encoder states are valid and different
-        for (int i = 0; i < 2; ++i) {
-
-            // invalid if 00 -> 11 or 11 -> 00
-            if ((vol[i][0]!=vol_new[i][0]) && (vol[i][1]!=vol_new[i][1])) {
-                //printf("Invalid state change.\n\n");
-                prev_time_enc[i] = time_us_64();
-            }
-
-            // no change, do nothing
-            else if ((vol[i][0]==vol_new[i][0]) && (vol[i][1]==vol_new[i][1])) {}
-
-            // valid change
-            else {
-
-                // grabs direction if outside of debounce window
-                if (time_us_64() > (prev_time_enc[i] + DEBOUNCE_DELAY_ENC_US)) {
-                    vol_directions[i][1] = encoder_direction(vol_new[i][0],vol_new[i][1], vol[i][0],vol[i][1]);
-
-                    if(vol_directions[i][1]) {
-                        //printf("R / CW\t\t-->\n\n");
-                        consensus[i][0] += (consensus[i][0] > ENCODER_CONSENSUS_COUNT) ? 0 : 1;
-                        consensus[i][1] = (consensus[i][1] > 0) ? consensus[i][1] - 1 : 0;
-
-                        /*
-                        if (time_us_64() > (prev_time_enc[i] + debounce_delay_us)) {
-                            delta[i] = MOUSE_DELTA;
-                            prev_time_enc[i] = time_us_64();
-                        }
-                        else {}
-                        */
-                    }
-                    else {
-                        //printf("L / CCW\t<--\n\n");
-                        consensus[i][0] = (consensus[i][0] > 0) ? consensus[i][0] - 1 : 0;
-                        consensus[i][1] += (consensus[i][1] > ENCODER_CONSENSUS_COUNT) ? 0 : 1;
-                        
-
-                        /*
-                        if (time_us_64() > (prev_time_enc[i] + DEBOUNCE_DELAY_ENC_US)) {
-                            delta[i] = -MOUSE_DELTA;
-                            prev_time_enc[i] = time_us_64();
-                        }
-                        else{}
-                        */
-                    }
-                    if (consensus[i][0] > ENCODER_CONSENSUS_COUNT) {
-                        delta[i] = MOUSE_DELTA;
-                    }
-                    else if (consensus[i][1] > ENCODER_CONSENSUS_COUNT) {
-                        delta[i] = -MOUSE_DELTA;
-                    }
-                    vol_directions[i][0] = vol_directions[i][1];
-                }
-                // ignores all signals in debounce window (in theory)
-                else {}
-                prev_time_enc[i] = time_us_64();
-            }
-        }
         // send mouse report if any changes
         if (delta[0] != 0 || delta[1] != 0)
             send_mouse_report(); 
-
-        // save new VOL values to stored values
-        for (int a = 0; a < 2; ++a) {
-            for (int b = 0; b < 2; ++b) {
-                if (vol[a][b] != vol_new[a][b]) {
-                    vol[a][b] = vol_new[a][b];
-                    //changed = true;
-                }
-            }
-        }
 
         //bool btn_changed = false;
         
